@@ -1,0 +1,522 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<!-- Let iOS "Add to Home Screen" launch this full-screen like a native app -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Clock Tuner">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Clock Tuner</title>
+
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel2: #1e2530;
+    --line: #2b3240;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --accent: #58a6ff;
+    --fast: #ff6b6b;   /* running fast / needs lengthening */
+    --slow: #4fd1c5;   /* running slow / needs shortening  */
+    --good: #7ee787;   /* in regulation                    */
+    --tick: #ffd479;
+    --tock: #7aa2ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  body { max-width: 640px; margin: 0 auto;
+    padding: calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 24px); }
+
+  h1 { font-size: 19px; font-weight: 650; margin: 0 0 2px; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+
+  /* ---- primary rate readout ---- */
+  .rate-card { text-align: center; padding: 22px 16px 18px; }
+  .rate-label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); }
+  .rate-value { font-size: 54px; font-weight: 750; line-height: 1.05;
+    font-variant-numeric: tabular-nums; margin: 6px 0 2px; }
+  .rate-unit { font-size: 15px; color: var(--muted); }
+  .rate-state { font-size: 15px; font-weight: 650; margin-top: 8px;
+    letter-spacing: .06em; text-transform: uppercase; }
+
+  /* ---- secondary stat row ---- */
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .stat { background: var(--panel2); border-radius: 12px; padding: 12px 8px; text-align: center; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .stat .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .stat .u { font-size: 11px; color: var(--muted); }
+
+  /* ---- guidance ---- */
+  .guide { font-size: 15px; line-height: 1.5; }
+  .guide .headline { font-weight: 650; margin-bottom: 4px; }
+  .guide .detail { color: var(--muted); font-size: 14px; }
+  .adjust { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+    font-size: 14px; color: var(--text); }
+  .adjust b { color: var(--accent); }
+
+  /* ---- beat trace ---- */
+  canvas { width: 100%; height: 130px; display: block; border-radius: 10px;
+    background: var(--panel2); }
+  .legend { display: flex; gap: 16px; justify-content: center; font-size: 12px;
+    color: var(--muted); margin-top: 8px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    margin-right: 5px; vertical-align: middle; }
+
+  /* ---- controls ---- */
+  label.field { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row .col { flex: 1 1 130px; }
+  input[type=number] { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 10px; padding: 11px 12px; font-size: 16px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .sens-val { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  button { font-size: 17px; font-weight: 650; border: none; border-radius: 14px;
+    padding: 16px; width: 100%; cursor: pointer; color: #06121f; }
+  .btn-start { background: var(--good); }
+  .btn-stop  { background: var(--fast); color: #2a0d0d; }
+  .btn-ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    font-size: 14px; padding: 12px; }
+
+  /* ---- mic level + tick flash ---- */
+  .mic { display: flex; align-items: center; gap: 12px; }
+  .meter { flex: 1; height: 8px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+  .meter > span { display: block; height: 100%; width: 0%; background: var(--accent);
+    transition: width .05s linear; }
+  .flash { width: 16px; height: 16px; border-radius: 50%; background: var(--line);
+    transition: background .04s, box-shadow .04s; }
+  .flash.on { background: var(--tick); box-shadow: 0 0 12px 3px var(--tick); }
+
+  .status { font-size: 13px; color: var(--muted); text-align: center; margin-top: 4px; min-height: 18px; }
+  .hint { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .hidden { display: none !important; }
+  details { margin-top: 6px; } summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+</style>
+
+<h1>🕰️ Clock Tuner</h1>
+<p class="sub">Listen to a mechanical clock and calibrate its rate — beat by beat.</p>
+
+<!-- PRIMARY READOUT -->
+<div class="card rate-card">
+  <div class="rate-label">Rate</div>
+  <div class="rate-value" id="rateValue">—</div>
+  <div class="rate-unit">seconds / day</div>
+  <div class="rate-state" id="rateState">tap start</div>
+</div>
+
+<!-- SECONDARY STATS -->
+<div class="card">
+  <div class="stats">
+    <div class="stat"><div class="k">Measured</div><div class="v" id="bphValue">—</div><div class="u">BPH</div></div>
+    <div class="stat"><div class="k">Beat error</div><div class="v" id="beValue">—</div><div class="u">ms</div></div>
+    <div class="stat"><div class="k">Beats</div><div class="v" id="countValue">0</div><div class="u">counted</div></div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<!-- GUIDANCE -->
+<div class="card guide" id="guideCard">
+  <div class="headline" id="guideHead">Set your clock's beat rate below, then press Start.</div>
+  <div class="detail" id="guideDetail">Hold the phone's microphone close to the movement, in a quiet room.</div>
+  <div class="adjust hidden" id="adjustBox"></div>
+</div>
+
+<!-- BEAT TRACE -->
+<div class="card">
+  <canvas id="trace" width="608" height="130"></canvas>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--tick)"></span>tick</span>
+    <span><span class="dot" style="background:var(--tock)"></span>tock</span>
+    <span>slope = rate&nbsp;·&nbsp;gap = beat error</span>
+  </div>
+</div>
+
+<!-- MIC -->
+<div class="card">
+  <div class="mic">
+    <div class="flash" id="flash"></div>
+    <div class="meter"><span id="meterBar"></span></div>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="card">
+  <div class="row">
+    <div class="col">
+      <label class="field" for="bph">Target beat rate (BPH)</label>
+      <input type="number" id="bph" value="3600" min="1800" max="43200" step="1">
+    </div>
+    <div class="col">
+      <label class="field" for="plen">Pendulum length (mm, optional)</label>
+      <input type="number" id="plen" placeholder="e.g. 250" min="1" step="1">
+    </div>
+  </div>
+  <div style="margin-top:14px">
+    <label class="field" for="sens">Sensitivity <span class="sens-val" id="sensVal">4.0</span></label>
+    <input type="range" id="sens" min="2" max="9" step="0.1" value="4">
+  </div>
+  <details>
+    <summary>What beat rate should I use?</summary>
+    <p class="hint">The beat rate (beats-per-hour, BPH) is a property of the movement, not something you
+      pick — it's what the clock is <i>designed</i> to run at. A clock with a 1-second "seconds pendulum"
+      is <b>3600 BPH</b> (one tick every second). Check the movement's paperwork or stamp. If you don't
+      know it, press <b>Auto-detect</b> below while the clock runs — it rounds the measured rate to the
+      nearest whole BPH as a starting guess (this assumes the clock is currently close to correct).</p>
+    <button class="btn-ghost" id="autoBtn" style="margin-top:6px">Auto-detect beat rate</button>
+  </details>
+</div>
+
+<div class="card">
+  <button class="btn-start" id="toggle">Start listening</button>
+  <button class="btn-ghost" id="resetBtn" style="margin-top:10px">Reset measurement</button>
+  <p class="hint" style="margin-top:12px">
+    📍 <b>iPhone:</b> works in Safari. The mic needs a secure connection, so open this page over
+    <b>https</b> (see the README for hosting). Tap the share icon → <b>Add to Home Screen</b> to run it
+    like an app. Turn on <b>Do Not Disturb</b> and keep the room quiet for the cleanest reading.
+  </p>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Clock Tuner — microphone-based mechanical-clock rate analyzer.
+   The tick-detection + rate math here mirrors tools/validate_dsp.py, which is
+   unit-tested against synthetic clock audio with known rate and beat error.
+   ========================================================================== */
+
+/* ---- scale-invariant tick detector (per-sample streaming) --------------- */
+class TickDetector {
+  constructor(sr, refractoryS, sensitivity) {
+    this.sr = sr;
+    this.refractory = Math.max(1, Math.floor(refractoryS * sr));
+    this.sens = sensitivity;      // threshold on fast/slow envelope ratio
+    this.aFast = 0.02;            // ~1 ms  (click attack)
+    this.aSlow = 3e-5;            // ~0.7 s (background noise floor)
+    this.aPeakDn = 3e-4;          // decay of observed-peak tracker
+    this.eps = 1e-6;
+    this.prev = 0; this.envFast = 0; this.envSlow = 0; this.envPeak = this.eps;
+    this.counter = 0; this.armed = false; this.lastTick = -1e12;
+    this.peakVal = 0; this.peakPos = 0;
+    this.ticks = [];              // committed tick times (seconds)
+    this.instLevel = 0;           // for the live meter
+  }
+  setSensitivity(s) { this.sens = s; }
+  setRefractory(rs) { this.refractory = Math.max(1, Math.floor(rs * this.sr)); }
+
+  process(block) {
+    const n = block.length;
+    for (let i = 0; i < n; i++) {
+      const x = block[i];
+      const d = x - this.prev; this.prev = x;
+      const rect = d < 0 ? -d : d;
+      this.envFast += (rect - this.envFast) * this.aFast;
+      this.envSlow += (rect - this.envSlow) * this.aSlow;
+      if (this.envFast > this.envPeak) this.envPeak = this.envFast;
+      else this.envPeak += (this.envFast - this.envPeak) * this.aPeakDn;
+
+      const ratio = this.envFast / (this.envSlow + this.eps);
+      const isHit = ratio > this.sens && this.envFast > 0.18 * this.envPeak;
+
+      if (!this.armed) {
+        if (isHit && (this.counter - this.lastTick) > this.refractory) {
+          this.armed = true; this.peakVal = this.envFast; this.peakPos = this.counter;
+        }
+      } else {
+        if (this.envFast > this.peakVal) { this.peakVal = this.envFast; this.peakPos = this.counter; }
+        if (!isHit) {                       // click passed -> commit at its peak
+          this.ticks.push(this.peakPos / this.sr);
+          this.lastTick = this.peakPos; this.armed = false;
+        }
+      }
+      this.counter++;
+    }
+    this.instLevel = this.envFast / (this.envPeak + this.eps); // 0..1-ish
+  }
+
+  /* keep only the most recent `keepSeconds` of ticks so the reading tracks
+     the clock's *current* state while you adjust it */
+  prune(keepSeconds) {
+    if (!this.ticks.length) return;
+    const cutoff = this.counter / this.sr - keepSeconds;
+    let i = 0; while (i < this.ticks.length && this.ticks[i] < cutoff) i++;
+    if (i > 0) this.ticks = this.ticks.slice(i);
+  }
+}
+
+/* ---- analysis: ticks -> BPH, rate, beat error --------------------------- */
+function median(arr) {
+  if (!arr.length) return NaN;
+  const a = arr.slice().sort((p, q) => p - q);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+function mean(arr) { return arr.reduce((s, v) => s + v, 0) / arr.length; }
+
+function analyze(ticks, nominalBph) {
+  if (ticks.length < 6) return null;
+  const iv = [];
+  for (let i = 1; i < ticks.length; i++) iv.push(ticks[i] - ticks[i - 1]);
+  const m = median(iv);                              // robust center (gate only)
+  const lo = 0.6 * m, hi = 1.4 * m;
+  const keep = iv.filter(v => v > lo && v < hi);
+  if (keep.length < 5) return null;
+  const beat = mean(keep);                            // unbiased under beat error
+  const measuredBph = 3600 / beat;
+
+  const tNom = 3600 / nominalBph;
+  const secPerDay = 86400 * (tNom - beat) / beat;     // >0 => fast
+
+  // beat error: split clean intervals by parity, compare medians
+  const even = [], odd = [];
+  for (let i = 0; i < iv.length; i++) {
+    if (iv[i] > lo && iv[i] < hi) (i % 2 === 0 ? even : odd).push(iv[i]);
+  }
+  let beatErrorMs = null;
+  if (even.length >= 3 && odd.length >= 3) beatErrorMs = Math.abs(median(even) - median(odd)) * 1000;
+
+  // stability: coefficient of variation of the kept intervals
+  const sd = Math.sqrt(mean(keep.map(v => (v - beat) * (v - beat))));
+  const cv = sd / beat;
+
+  return { beats: ticks.length, measuredBph, beat, secPerDay, beatErrorMs, cv };
+}
+
+/* ---- pendulum correction ------------------------------------------------
+   Period T ∝ √L, so dT/T = ½·dL/L. To cancel a fast/slow error of
+   `secPerDay`, change length by dL/L = 2·secPerDay/86400.               */
+function pendulumAdjustMm(lengthMm, secPerDay) {
+  if (!lengthMm || !isFinite(lengthMm)) return null;
+  return lengthMm * 2 * secPerDay / 86400;   // + => lengthen (clock was fast)
+}
+
+/* ======================================================================== */
+/* UI + audio wiring                                                        */
+/* ======================================================================== */
+const $ = id => document.getElementById(id);
+const els = {
+  rateValue: $("rateValue"), rateState: $("rateState"),
+  bphValue: $("bphValue"), beValue: $("beValue"), countValue: $("countValue"),
+  status: $("status"), guideHead: $("guideHead"), guideDetail: $("guideDetail"),
+  adjustBox: $("adjustBox"), toggle: $("toggle"), resetBtn: $("resetBtn"),
+  bph: $("bph"), plen: $("plen"), sens: $("sens"), sensVal: $("sensVal"),
+  autoBtn: $("autoBtn"), flash: $("flash"), meterBar: $("meterBar"),
+  trace: $("trace"),
+};
+
+let audioCtx = null, stream = null, source = null, node = null, zeroGain = null;
+let detector = null, running = false, lastResult = null, lastTickCount = 0;
+const KEEP_SECONDS = 100;   // rolling analysis window
+
+function targetBph() { return Math.max(1, parseFloat(els.bph.value) || 3600); }
+
+els.sens.addEventListener("input", () => {
+  els.sensVal.textContent = parseFloat(els.sens.value).toFixed(1);
+  if (detector) detector.setSensitivity(parseFloat(els.sens.value));
+});
+els.bph.addEventListener("change", () => {
+  if (detector) detector.setRefractory(0.5 * 3600 / targetBph());
+});
+
+async function start() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    await audioCtx.resume();
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,   // these mangle transients — keep them OFF
+        noiseSuppression: false,
+        autoGainControl: false,
+      }, video: false,
+    });
+  } catch (e) {
+    els.status.textContent = "Microphone blocked: " + (e && e.message ? e.message : e);
+    els.guideHead.textContent = "Couldn't open the microphone.";
+    els.guideDetail.textContent =
+      "On iPhone the page must be served over https, and you must allow mic access.";
+    return;
+  }
+
+  const sr = audioCtx.sampleRate;
+  detector = new TickDetector(sr, 0.5 * 3600 / targetBph(), parseFloat(els.sens.value));
+  source = audioCtx.createMediaStreamSource(stream);
+
+  // ScriptProcessorNode: simple and reliable on iOS Safari. Sample-accurate
+  // timing comes from counting samples, not from callback timing.
+  const bufSize = 4096;
+  node = audioCtx.createScriptProcessor(bufSize, 1, 1);
+  node.onaudioprocess = ev => {
+    if (!running) return;
+    detector.process(ev.inputBuffer.getChannelData(0));
+  };
+  // route through a silent gain node so we don't play the mic back to the speaker
+  zeroGain = audioCtx.createGain(); zeroGain.gain.value = 0;
+  source.connect(node); node.connect(zeroGain); zeroGain.connect(audioCtx.destination);
+
+  running = true;
+  els.toggle.textContent = "Stop";
+  els.toggle.className = "btn-stop";
+  els.status.textContent = "Listening… hold the mic near the movement.";
+  els.guideHead.textContent = "Listening for ticks…";
+  els.guideDetail.textContent = "Give it 20–30 beats to settle.";
+}
+
+function stop() {
+  running = false;
+  if (node) node.onaudioprocess = null;
+  try { if (source) source.disconnect(); } catch (e) {}
+  try { if (node) node.disconnect(); } catch (e) {}
+  try { if (zeroGain) zeroGain.disconnect(); } catch (e) {}
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  audioCtx = stream = source = node = zeroGain = null;
+  els.toggle.textContent = "Start listening";
+  els.toggle.className = "btn-start";
+  els.status.textContent = "Stopped.";
+}
+
+els.toggle.addEventListener("click", () => running ? stop() : start());
+els.resetBtn.addEventListener("click", () => {
+  if (detector) { detector.ticks = []; }
+  lastResult = null;
+  els.rateValue.textContent = "—"; els.rateState.textContent = running ? "measuring…" : "tap start";
+  els.rateState.style.color = "var(--muted)";
+  els.bphValue.textContent = els.beValue.textContent = "—"; els.countValue.textContent = "0";
+});
+els.autoBtn.addEventListener("click", () => {
+  if (lastResult && isFinite(lastResult.measuredBph)) {
+    els.bph.value = Math.round(lastResult.measuredBph);
+    if (detector) detector.setRefractory(0.5 * 3600 / targetBph());
+    els.status.textContent = "Set target to nearest whole BPH: " + els.bph.value;
+  } else {
+    els.status.textContent = "Let it listen for a few seconds first, then auto-detect.";
+  }
+});
+
+/* ---- periodic stats update --------------------------------------------- */
+function fmtSigned(v, digits) { return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(digits); }
+
+function updateStats() {
+  if (!running || !detector) return;
+  detector.prune(KEEP_SECONDS);
+  const res = analyze(detector.ticks, targetBph());
+  els.countValue.textContent = detector.ticks.length;
+  if (!res) {
+    els.status.textContent = "Listening… " + detector.ticks.length + " beats so far.";
+    return;
+  }
+  lastResult = res;
+
+  els.bphValue.textContent = res.measuredBph.toFixed(1);
+  els.beValue.textContent = res.beatErrorMs == null ? "—" : res.beatErrorMs.toFixed(1);
+
+  const settled = res.beats >= 20 && res.cv < 0.05;
+  const spd = res.secPerDay;
+  els.rateValue.textContent = fmtSigned(spd, spd >= 100 ? 0 : 1);
+
+  let col, state;
+  if (Math.abs(spd) < 2)      { col = "var(--good)"; state = "In regulation"; }
+  else if (spd > 0)           { col = "var(--fast)"; state = "Running FAST"; }
+  else                        { col = "var(--slow)"; state = "Running SLOW"; }
+  els.rateValue.style.color = col; els.rateState.style.color = col; els.rateState.textContent = state;
+
+  els.status.textContent = settled
+    ? "Stable · " + (res.cv * 100 < 0.5 ? "excellent" : "good") + " signal"
+    : "Stabilizing… keep it quiet (" + res.beats + " beats)";
+
+  updateGuidance(res);
+  drawTrace(detector.ticks, targetBph());
+}
+
+function updateGuidance(res) {
+  const spd = res.secPerDay;
+  const be = res.beatErrorMs;
+  let head, detail;
+
+  if (Math.abs(spd) < 2) {
+    head = "✅ In regulation — within a couple of seconds per day.";
+    detail = "Let it run overnight and confirm against a reference clock. Fine adjustments from here.";
+  } else if (spd > 0) {
+    head = "⏩ Running FAST by " + Math.abs(spd).toFixed(spd >= 100 ? 0 : 1) + " s/day.";
+    detail = "Slow it down: LENGTHEN the pendulum — turn the rating nut under the bob so the bob moves DOWN.";
+  } else {
+    head = "⏪ Running SLOW by " + Math.abs(spd).toFixed(-spd >= 100 ? 0 : 1) + " s/day.";
+    detail = "Speed it up: SHORTEN the pendulum — turn the rating nut so the bob moves UP.";
+  }
+  els.guideHead.textContent = head;
+  els.guideDetail.textContent = detail;
+
+  // pendulum length -> concrete millimetre adjustment
+  const L = parseFloat(els.plen.value);
+  let adj = "";
+  if (L && isFinite(L) && Math.abs(spd) >= 2) {
+    const dmm = Math.abs(pendulumAdjustMm(L, spd));
+    const dir = spd > 0 ? "lengthen (lower the bob)" : "shorten (raise the bob)";
+    adj += "🔧 Adjust the effective length by about <b>" + dmm.toFixed(dmm < 1 ? 2 : 1) +
+           " mm</b> — " + dir + ".";
+  }
+  if (be != null && be > 8) {
+    if (adj) adj += "<br>";
+    adj += "🎯 <b>Out of beat by " + be.toFixed(1) + " ms.</b> The tick and tock are uneven — " +
+           "make sure the clock is level, then adjust the crutch / beat-setting lever until this " +
+           "drops under ~5 ms. A clock badly out of beat can stop.";
+  }
+  if (adj) { els.adjustBox.innerHTML = adj; els.adjustBox.classList.remove("hidden"); }
+  else els.adjustBox.classList.add("hidden");
+}
+
+/* ---- beat trace: cumulative phase deviation from the target rate --------
+   For each beat i at time t_i, ideal time = t0 + i·T_nom. We plot
+   (t_i − ideal) in ms. The common SLOPE of the points is the rate error;
+   ticks and tocks form two lines whose vertical GAP is the beat error.   */
+const ctx = els.trace.getContext("2d");
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function drawTrace(ticks, nominalBph) {
+  const W = els.trace.width, H = els.trace.height;
+  ctx.clearRect(0, 0, W, H);
+  if (ticks.length < 6) return;
+  const N = Math.min(ticks.length, 140);
+  const seg = ticks.slice(ticks.length - N);
+  const tNom = 3600 / nominalBph;
+  const t0 = seg[0];
+  const dev = seg.map((t, i) => (t - (t0 + i * tNom)) * 1000); // ms
+  let mn = Math.min(...dev), mx = Math.max(...dev);
+  if (mx - mn < 4) { const c = (mx + mn) / 2; mn = c - 2; mx = c + 2; }
+  const pad = (mx - mn) * 0.15; mn -= pad; mx += pad;
+  const x = i => 8 + (W - 16) * i / (N - 1);
+  const y = v => H - 10 - (H - 20) * (v - mn) / (mx - mn);
+
+  // zero reference line (on-rate)
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(8, y(0)); ctx.lineTo(W - 8, y(0)); ctx.stroke();
+
+  // points, coloured by parity (tick vs tock)
+  const tickCol = css("--tick"), tockCol = css("--tock");
+  for (let i = 0; i < N; i++) {
+    ctx.fillStyle = (i % 2 === 0) ? tickCol : tockCol;
+    ctx.beginPath(); ctx.arc(x(i), y(dev[i]), 2.2, 0, 6.2832); ctx.fill();
+  }
+}
+
+/* live meter + tick flash on animation frame */
+let flashUntil = 0;
+function frame() {
+  if (running && detector) {
+    els.meterBar.style.width = Math.min(100, detector.instLevel * 100).toFixed(0) + "%";
+    if (detector.ticks.length !== lastTickCount) {
+      lastTickCount = detector.ticks.length;
+      flashUntil = performance.now() + 70;
+    }
+    els.flash.classList.toggle("on", performance.now() < flashUntil);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+setInterval(updateStats, 250);
+</script>

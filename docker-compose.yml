@@ -1,0 +1,29 @@
+# Clock Tuner — static web app served by nginx.
+#
+# Easiest deploy (Portainer → Stacks → Add stack → Repository):
+#   Repository URL:  https://github.com/OWNER/clock-tuner
+#   Compose path:    docker-compose.yml
+# Portainer clones the repo onto the Docker host, so the ./index.html bind
+# mount below resolves to the file in the cloned repo — no image build needed.
+#
+# The app needs HTTPS for the microphone to work, so put this behind your
+# reverse proxy (Traefik / Nginx Proxy Manager / Caddy) and let it terminate
+# TLS. See the "Deploy on Portainer" section of README.md.
+
+services:
+  clock-tuner:
+    image: nginx:alpine
+    container_name: clock-tuner
+    restart: unless-stopped
+    ports:
+      - "8099:80"            # http://<docker-host>:8099  (proxy HTTPS in front)
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+
+    # --- Optional: Traefik labels (uncomment + set your domain) --------------
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.clock.rule=Host(`clock.yourdomain.com`)"
+    #   - "traefik.http.routers.clock.entrypoints=websecure"
+    #   - "traefik.http.routers.clock.tls.certresolver=le"
+    #   - "traefik.http.services.clock.loadbalancer.server.port=80"
