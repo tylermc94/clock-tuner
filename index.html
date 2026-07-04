@@ -192,7 +192,7 @@
       <b>3600 BPH</b> (one tick every second). Check the movement's paperwork or stamp. Don't know it?
       Use one of the two tools below <i>while the clock is running</i>.</p>
 
-    <button class="btn-ghost" id="autoBtn" style="margin-top:6px">Suggest beat rate from the tick</button>
+    <button class="btn-ghost" id="autoBtn" style="margin-top:6px">Use the measured tick rate</button>
     <div class="suggest hidden" id="suggestBox"></div>
 
     <div class="calib">
@@ -359,26 +359,6 @@ function pendulumAdjustMm(lengthMm, secPerDay) {
   return lengthMm * 2 * secPerDay / 86400;   // + => lengthen (clock was fast)
 }
 
-/* ---- beat-rate suggestions --------------------------------------------------
-   The mic measures the beat *interval* precisely but can't know the movement's
-   intended rate. Real movements are built to a handful of standard beat rates,
-   so we snap the measurement to the nearest of those. Snapping (vs. rounding to
-   the nearest 1 BPH) is what stops the suggestion jittering between taps.     */
-const COMMON_BPH = [
-  3600, 3960, 4000, 4320, 4500, 4800, 5000, 5040, 5400, 5760, 6000, 6300,
-  6480, 6600, 6750, 7200, 7920, 8100, 8640, 9000, 9600, 10800, 12960, 14400,
-  18000, 19800, 21600, 25200, 28800,
-];
-function nearestRates(measuredBph, k) {
-  return COMMON_BPH
-    .map(r => ({ r, d: Math.abs(r - measuredBph) }))
-    .sort((a, b) => a.d - b.d)
-    .slice(0, k)
-    .map(o => o.r);
-}
-/* seconds/day a given target rate would report, for the currently measured beat */
-function spdForRate(rate, beat) { return 86400 * (3600 / rate - beat) / beat; }
-
 /* apply a target BPH everywhere it matters (input + detector refractory) */
 function applyTargetBph(v) {
   els.bph.value = v;
@@ -498,42 +478,38 @@ els.resetBtn.addEventListener("click", () => {
   flashButton(els.resetBtn, "✓ Cleared");
 });
 
-/* Suggest a beat rate: snap the measured tick rate to the nearest standard
-   movement rates and offer them as tappable options. */
+/* Use the measured tick rate as the target. The tick only reveals how fast the
+   clock is beating *now* — not the rate it was designed for — so this is only
+   correct if the clock is currently keeping good time. We don't snap to a list
+   of "standard" rates: a movement's design BPH is fixed by its gear train and
+   isn't necessarily round. Wait for a settled reading so the value doesn't jitter,
+   and point anyone who's seen the clock drift at the drift calibrator instead. */
 els.autoBtn.addEventListener("click", () => {
   if (!(lastResult && isFinite(lastResult.measuredBph) && lastResult.beat)) {
     els.suggestBox.innerHTML =
-      '<div class="lead">Tap <b>Start listening</b> and give it ~15–20 beats first, then try again.</div>';
+      '<div class="lead">Tap <b>Start listening</b> and give it ~20 beats first, then try again.</div>';
     els.suggestBox.classList.remove("hidden");
     return;
   }
-  const m = lastResult.measuredBph, beat = lastResult.beat;
-  const cands = nearestRates(m, 3);
-  const best = cands[0];
-  applyTargetBph(best);
-
-  let html = '<div class="lead">Measured ≈ <b>' + m.toFixed(0) +
-    ' BPH</b>. Nearest standard rates — tap to use:</div><div class="chips">';
-  cands.forEach(r => {
-    const spd = spdForRate(r, beat);
-    html += '<button class="chip' + (r === best ? ' primary' : '') + '" data-rate="' + r + '">' +
-      r + ' BPH<span class="spd">' + fmtSigned(spd, Math.abs(spd) >= 100 ? 0 : 1) + ' s/day</span></button>';
-  });
-  html += '</div><div class="lead" style="margin-top:8px">Set to <b>' + best +
-    ' BPH</b> (nearest standard). None look right? Use <b>Calibrate from observed drift</b> below.</div>';
-  els.suggestBox.innerHTML = html;
+  if (!(lastResult.beats >= 20 && lastResult.cv < 0.05)) {
+    els.suggestBox.innerHTML =
+      '<div class="lead">Still settling (' + lastResult.beats + ' beats). Let the reading steady ' +
+      'for a few more seconds, then try again.</div>';
+    els.suggestBox.classList.remove("hidden");
+    return;
+  }
+  const m = lastResult.measuredBph;
+  const rounded = Math.round(m);
+  applyTargetBph(rounded);
+  els.suggestBox.innerHTML =
+    '<div class="lead">It\'s ticking at <b>' + m.toFixed(1) + ' BPH</b>, so I set the target to <b>' +
+    rounded + ' BPH</b>.<br><br>⚠️ This is only right if the clock is <i>currently keeping good time</i> — ' +
+    'the tick can\'t tell the designed rate from a regulation error. If you\'ve seen it run fast or slow, ' +
+    'use <b>Calibrate from observed drift</b> below for the exact rate (for a clock running fast, the true ' +
+    'rate is slightly <i>below</i> the ticked rate).</div>';
   els.suggestBox.classList.remove("hidden");
-
-  els.suggestBox.querySelectorAll(".chip").forEach(btn => {
-    btn.addEventListener("click", () => {
-      applyTargetBph(parseFloat(btn.dataset.rate));
-      els.suggestBox.querySelectorAll(".chip").forEach(b => b.classList.remove("primary"));
-      btn.classList.add("primary");
-      els.status.textContent = "Target beat rate set to " + btn.dataset.rate + " BPH.";
-    });
-  });
-  els.status.textContent = "Target beat rate set to " + best + " BPH (nearest standard).";
-  flashButton(els.autoBtn, "✓ Suggested");
+  els.status.textContent = "Target set to the measured tick rate: " + rounded + " BPH.";
+  flashButton(els.autoBtn, "✓ Set to measured");
 });
 
 /* Calibrate from observed drift: derive the EXACT target BPH from the current
@@ -619,8 +595,8 @@ function updateGuidance(res) {
     els.guideHead.textContent = "⚠️ Beat-rate mismatch — this isn't a real rate error.";
     els.guideDetail.innerHTML = "The measured beat rate (<b>" + res.measuredBph.toFixed(0) +
       " BPH</b>) is far from your target (<b>" + Math.round(targetBph()) + " BPH</b>), so the " +
-      "“s/day” number above isn't meaningful. Open <b>“What beat rate should I use?”</b> and tap " +
-      "<b>Suggest beat rate</b>, or use <b>Calibrate from observed drift</b>.";
+      "“s/day” number above isn't meaningful. Open <b>“What beat rate should I use?”</b> and either " +
+      "<b>Use the measured tick rate</b> or <b>Calibrate from observed drift</b>.";
     els.adjustBox.classList.add("hidden");
     return;
   }

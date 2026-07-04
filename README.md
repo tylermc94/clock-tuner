@@ -93,15 +93,18 @@ measured rate is far from your target.
 
 Don't know the BPH? Open **"What beat rate should I use?"** — there are two tools:
 
-- **Suggest beat rate from the tick** — snaps the measured rate to the nearest
-  *standard* movement rates and offers the closest few as tappable options. It's
-  stable (repeated taps give the same answer) and assumes the clock is currently
-  close to correct.
+- **Use the measured tick rate** — reads how fast the clock is beating right now
+  and sets that as the target (once the reading has settled, so it doesn't
+  jitter). This is only correct **if the clock is currently keeping good time** —
+  the tick can't distinguish the designed rate from a regulation error, and a
+  movement's design BPH is set by its gear train, so it isn't necessarily a round
+  number. Use it only as a rough starting point.
 - **Calibrate from observed drift** *(most accurate)* — the mic alone can't know
   the intended rate, so anchor it to reality: tell it how far the clock has
   drifted against a reference (e.g. *gained 10 min over 1.5 days*) and it computes
   the **exact** target BPH. After that the reading matches your real-world
-  observation and the pendulum advice is correct.
+  observation and the pendulum advice is correct. (For a clock running fast, the
+  true rate is slightly *below* the rate you measure at the tick.)
 
 ---
 
