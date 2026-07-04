@@ -82,9 +82,26 @@ This is only for the laptop itself; phones on the LAN still need https (Option A
 BPH (beats per hour) is a **property of the movement** — what it's *designed* to
 run at — not something you choose. Common reference: a **1-second "seconds
 pendulum" is 3600 BPH** (one tick every second). Check the movement's paperwork or
-any stamp on it. If you don't know it, press **Auto-detect** while the clock runs
-— it rounds the measured rate to the nearest whole BPH as a starting guess (this
-assumes the clock is currently *close* to correct).
+any stamp on it.
+
+**Getting this right matters.** The mic measures the beat *interval* very
+precisely, but "fast/slow" is only ever *relative to the target BPH you enter*. If
+the target is wrong for your movement, the "seconds per day" figure will be wildly
+off (e.g. a 6600-BPH clock read against the 3600 default shows tens of thousands
+of s/day — that's the mismatch, not the clock). The app now warns you when the
+measured rate is far from your target.
+
+Don't know the BPH? Open **"What beat rate should I use?"** — there are two tools:
+
+- **Suggest beat rate from the tick** — snaps the measured rate to the nearest
+  *standard* movement rates and offers the closest few as tappable options. It's
+  stable (repeated taps give the same answer) and assumes the clock is currently
+  close to correct.
+- **Calibrate from observed drift** *(most accurate)* — the mic alone can't know
+  the intended rate, so anchor it to reality: tell it how far the clock has
+  drifted against a reference (e.g. *gained 10 min over 1.5 days*) and it computes
+  the **exact** target BPH. After that the reading matches your real-world
+  observation and the pendulum advice is correct.
 
 ---
 

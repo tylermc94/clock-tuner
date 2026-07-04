@@ -79,11 +79,34 @@
   .sens-val { color: var(--text); font-variant-numeric: tabular-nums; }
 
   button { font-size: 17px; font-weight: 650; border: none; border-radius: 14px;
-    padding: 16px; width: 100%; cursor: pointer; color: #06121f; }
+    padding: 16px; width: 100%; cursor: pointer; color: #06121f;
+    transition: transform .06s ease, filter .06s ease, background .15s ease; }
+  /* tactile press feedback so a tap always visibly registers */
+  button:active { transform: scale(.97); }
   .btn-start { background: var(--good); }
+  .btn-start:active, .btn-stop:active { filter: brightness(.9); }
   .btn-stop  { background: var(--fast); color: #2a0d0d; }
   .btn-ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
     font-size: 14px; padding: 12px; }
+  .btn-ghost:active { filter: brightness(1.4); }
+  .btn-ok { background: var(--good) !important; color: #06121f !important;
+    border-color: var(--good) !important; }
+
+  select { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 10px; padding: 11px 12px; font-size: 16px;
+    -webkit-appearance: none; appearance: none; }
+
+  /* ---- beat-rate suggestions + drift calibrator ---- */
+  .suggest { margin-top: 12px; }
+  .suggest .lead { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { width: auto; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 13px; font-size: 14px; font-weight: 650; }
+  .chip.primary { border-color: var(--accent); color: var(--accent); }
+  .chip .spd { color: var(--muted); font-weight: 500; font-size: 12px; margin-left: 7px; }
+  .calib { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .calib .calib-title { font-weight: 650; color: var(--text); margin-bottom: 8px; font-size: 14px; }
+  .calib .calib-title span { color: var(--muted); font-weight: 400; }
 
   /* ---- mic level + tick flash ---- */
   .mic { display: flex; align-items: center; gap: 12px; }
@@ -151,7 +174,7 @@
   <div class="row">
     <div class="col">
       <label class="field" for="bph">Target beat rate (BPH)</label>
-      <input type="number" id="bph" value="3600" min="1800" max="43200" step="1">
+      <input type="number" id="bph" value="3600" min="1800" max="43200" step="any">
     </div>
     <div class="col">
       <label class="field" for="plen">Pendulum length (mm, optional)</label>
@@ -165,11 +188,51 @@
   <details>
     <summary>What beat rate should I use?</summary>
     <p class="hint">The beat rate (beats-per-hour, BPH) is a property of the movement, not something you
-      pick — it's what the clock is <i>designed</i> to run at. A clock with a 1-second "seconds pendulum"
-      is <b>3600 BPH</b> (one tick every second). Check the movement's paperwork or stamp. If you don't
-      know it, press <b>Auto-detect</b> below while the clock runs — it rounds the measured rate to the
-      nearest whole BPH as a starting guess (this assumes the clock is currently close to correct).</p>
-    <button class="btn-ghost" id="autoBtn" style="margin-top:6px">Auto-detect beat rate</button>
+      pick — it's what the clock is <i>designed</i> to run at. A 1-second "seconds pendulum" is
+      <b>3600 BPH</b> (one tick every second). Check the movement's paperwork or stamp. Don't know it?
+      Use one of the two tools below <i>while the clock is running</i>.</p>
+
+    <button class="btn-ghost" id="autoBtn" style="margin-top:6px">Suggest beat rate from the tick</button>
+    <div class="suggest hidden" id="suggestBox"></div>
+
+    <div class="calib">
+      <div class="calib-title">🎯 Calibrate from observed drift <span>— most accurate</span></div>
+      <p class="hint" style="margin:0 0 10px">The mic only measures the beat <i>interval</i> — it can't
+        know the intended rate on its own. If you've compared the clock to a reference over time, tell me
+        how far it drifted and I'll compute the <b>exact</b> beat rate, so the reading and the pendulum
+        advice match reality.</p>
+      <div class="row">
+        <div class="col">
+          <label class="field" for="driftDir">The clock</label>
+          <select id="driftDir">
+            <option value="gained">gained (ran fast)</option>
+            <option value="lost">lost (ran slow)</option>
+          </select>
+        </div>
+        <div class="col">
+          <label class="field" for="driftAmt">by</label>
+          <div style="display:flex;gap:8px">
+            <input type="number" id="driftAmt" min="0" step="any" placeholder="10" style="flex:2">
+            <select id="driftAmtUnit" style="flex:1">
+              <option value="min">min</option>
+              <option value="sec">sec</option>
+            </select>
+          </div>
+        </div>
+        <div class="col">
+          <label class="field" for="driftOver">over</label>
+          <div style="display:flex;gap:8px">
+            <input type="number" id="driftOver" min="0" step="any" placeholder="1.5" style="flex:2">
+            <select id="driftOverUnit" style="flex:1">
+              <option value="day">days</option>
+              <option value="hr">hours</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="btn-ghost" id="calibBtn" style="margin-top:10px">Set exact beat rate from drift</button>
+      <div class="status" id="calibMsg" style="text-align:left;min-height:0"></div>
+    </div>
   </details>
 </div>
 
@@ -296,6 +359,44 @@ function pendulumAdjustMm(lengthMm, secPerDay) {
   return lengthMm * 2 * secPerDay / 86400;   // + => lengthen (clock was fast)
 }
 
+/* ---- beat-rate suggestions --------------------------------------------------
+   The mic measures the beat *interval* precisely but can't know the movement's
+   intended rate. Real movements are built to a handful of standard beat rates,
+   so we snap the measurement to the nearest of those. Snapping (vs. rounding to
+   the nearest 1 BPH) is what stops the suggestion jittering between taps.     */
+const COMMON_BPH = [
+  3600, 3960, 4000, 4320, 4500, 4800, 5000, 5040, 5400, 5760, 6000, 6300,
+  6480, 6600, 6750, 7200, 7920, 8100, 8640, 9000, 9600, 10800, 12960, 14400,
+  18000, 19800, 21600, 25200, 28800,
+];
+function nearestRates(measuredBph, k) {
+  return COMMON_BPH
+    .map(r => ({ r, d: Math.abs(r - measuredBph) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, k)
+    .map(o => o.r);
+}
+/* seconds/day a given target rate would report, for the currently measured beat */
+function spdForRate(rate, beat) { return 86400 * (3600 / rate - beat) / beat; }
+
+/* apply a target BPH everywhere it matters (input + detector refractory) */
+function applyTargetBph(v) {
+  els.bph.value = v;
+  if (detector) detector.setRefractory(0.5 * 3600 / targetBph());
+}
+
+/* brief on-button confirmation so a tap always visibly does something */
+function flashButton(btn, text) {
+  const orig = btn.dataset.label || (btn.dataset.label = btn.textContent);
+  btn.textContent = text;
+  btn.classList.add("btn-ok");
+  clearTimeout(btn._flashT);
+  btn._flashT = setTimeout(() => {
+    btn.textContent = btn.dataset.label;
+    btn.classList.remove("btn-ok");
+  }, 1200);
+}
+
 /* ======================================================================== */
 /* UI + audio wiring                                                        */
 /* ======================================================================== */
@@ -307,7 +408,10 @@ const els = {
   adjustBox: $("adjustBox"), toggle: $("toggle"), resetBtn: $("resetBtn"),
   bph: $("bph"), plen: $("plen"), sens: $("sens"), sensVal: $("sensVal"),
   autoBtn: $("autoBtn"), flash: $("flash"), meterBar: $("meterBar"),
-  trace: $("trace"),
+  trace: $("trace"), suggestBox: $("suggestBox"),
+  driftDir: $("driftDir"), driftAmt: $("driftAmt"), driftAmtUnit: $("driftAmtUnit"),
+  driftOver: $("driftOver"), driftOverUnit: $("driftOverUnit"),
+  calibBtn: $("calibBtn"), calibMsg: $("calibMsg"),
 };
 
 let audioCtx = null, stream = null, source = null, node = null, zeroGain = null;
@@ -384,19 +488,85 @@ function stop() {
 els.toggle.addEventListener("click", () => running ? stop() : start());
 els.resetBtn.addEventListener("click", () => {
   if (detector) { detector.ticks = []; }
-  lastResult = null;
-  els.rateValue.textContent = "—"; els.rateState.textContent = running ? "measuring…" : "tap start";
+  lastResult = null; lastTickCount = 0;
+  els.rateValue.textContent = "—"; els.rateValue.style.color = "var(--text)";
+  els.rateState.textContent = running ? "measuring…" : "tap start";
   els.rateState.style.color = "var(--muted)";
   els.bphValue.textContent = els.beValue.textContent = "—"; els.countValue.textContent = "0";
+  ctx.clearRect(0, 0, els.trace.width, els.trace.height);
+  els.status.textContent = "Measurement cleared — collecting fresh beats.";
+  flashButton(els.resetBtn, "✓ Cleared");
 });
+
+/* Suggest a beat rate: snap the measured tick rate to the nearest standard
+   movement rates and offer them as tappable options. */
 els.autoBtn.addEventListener("click", () => {
-  if (lastResult && isFinite(lastResult.measuredBph)) {
-    els.bph.value = Math.round(lastResult.measuredBph);
-    if (detector) detector.setRefractory(0.5 * 3600 / targetBph());
-    els.status.textContent = "Set target to nearest whole BPH: " + els.bph.value;
-  } else {
-    els.status.textContent = "Let it listen for a few seconds first, then auto-detect.";
+  if (!(lastResult && isFinite(lastResult.measuredBph) && lastResult.beat)) {
+    els.suggestBox.innerHTML =
+      '<div class="lead">Tap <b>Start listening</b> and give it ~15–20 beats first, then try again.</div>';
+    els.suggestBox.classList.remove("hidden");
+    return;
   }
+  const m = lastResult.measuredBph, beat = lastResult.beat;
+  const cands = nearestRates(m, 3);
+  const best = cands[0];
+  applyTargetBph(best);
+
+  let html = '<div class="lead">Measured ≈ <b>' + m.toFixed(0) +
+    ' BPH</b>. Nearest standard rates — tap to use:</div><div class="chips">';
+  cands.forEach(r => {
+    const spd = spdForRate(r, beat);
+    html += '<button class="chip' + (r === best ? ' primary' : '') + '" data-rate="' + r + '">' +
+      r + ' BPH<span class="spd">' + fmtSigned(spd, Math.abs(spd) >= 100 ? 0 : 1) + ' s/day</span></button>';
+  });
+  html += '</div><div class="lead" style="margin-top:8px">Set to <b>' + best +
+    ' BPH</b> (nearest standard). None look right? Use <b>Calibrate from observed drift</b> below.</div>';
+  els.suggestBox.innerHTML = html;
+  els.suggestBox.classList.remove("hidden");
+
+  els.suggestBox.querySelectorAll(".chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      applyTargetBph(parseFloat(btn.dataset.rate));
+      els.suggestBox.querySelectorAll(".chip").forEach(b => b.classList.remove("primary"));
+      btn.classList.add("primary");
+      els.status.textContent = "Target beat rate set to " + btn.dataset.rate + " BPH.";
+    });
+  });
+  els.status.textContent = "Target beat rate set to " + best + " BPH (nearest standard).";
+  flashButton(els.autoBtn, "✓ Suggested");
+});
+
+/* Calibrate from observed drift: derive the EXACT target BPH from the current
+   measured beat plus how far the clock has actually drifted against a reference.
+   design_beat = measured_beat · (1 + observed_spd/86400)  =>
+   design_BPH  = measured_BPH / (1 + observed_spd/86400).  This is the only way
+   to pin the true rate — the tick alone cannot. */
+els.calibBtn.addEventListener("click", () => {
+  if (!(lastResult && isFinite(lastResult.measuredBph) && lastResult.beat)) {
+    els.calibMsg.textContent = "Start listening first so it can measure the current beat, then set the drift.";
+    return;
+  }
+  const amt = parseFloat(els.driftAmt.value);
+  const over = parseFloat(els.driftOver.value);
+  if (!(amt >= 0) || !(over > 0)) {
+    els.calibMsg.textContent = "Enter how much it drifted and over how long (both positive).";
+    return;
+  }
+  const amtSec = amt * (els.driftAmtUnit.value === "min" ? 60 : 1);
+  const overDays = over * (els.driftOverUnit.value === "hr" ? 1 / 24 : 1);
+  const sign = els.driftDir.value === "gained" ? 1 : -1;   // gained = fast = +
+  const observedSpd = sign * amtSec / overDays;
+
+  let designBph = lastResult.measuredBph / (1 + observedSpd / 86400);
+  const clamped = Math.min(43200, Math.max(1800, designBph));
+  applyTargetBph(clamped.toFixed(2));
+
+  const note = clamped !== designBph ? " (clamped to the allowed range)" : "";
+  els.calibMsg.innerHTML = "✅ Exact beat rate set: <b>" + clamped.toFixed(2) + " BPH</b>" + note +
+    ". The rate should now read about <b>" + fmtSigned(observedSpd, Math.abs(observedSpd) >= 100 ? 0 : 1) +
+    " s/day</b> — matching what you observed. Follow the pendulum guidance to remove it.";
+  els.status.textContent = "Target beat rate calibrated to " + clamped.toFixed(2) + " BPH.";
+  flashButton(els.calibBtn, "✓ Calibrated");
 });
 
 /* ---- periodic stats update --------------------------------------------- */
@@ -418,10 +588,14 @@ function updateStats() {
 
   const settled = res.beats >= 20 && res.cv < 0.05;
   const spd = res.secPerDay;
-  els.rateValue.textContent = fmtSigned(spd, spd >= 100 ? 0 : 1);
+  // measured rate this far from target isn't a regulation error — it's the
+  // wrong target BPH. Real regulation is well under 1%; flag anything past 3%.
+  const mismatch = Math.abs(res.measuredBph - targetBph()) / targetBph() > 0.03;
+  els.rateValue.textContent = fmtSigned(spd, Math.abs(spd) >= 100 ? 0 : 1);
 
   let col, state;
-  if (Math.abs(spd) < 2)      { col = "var(--good)"; state = "In regulation"; }
+  if (mismatch)               { col = "var(--fast)"; state = "Check beat rate"; }
+  else if (Math.abs(spd) < 2) { col = "var(--good)"; state = "In regulation"; }
   else if (spd > 0)           { col = "var(--fast)"; state = "Running FAST"; }
   else                        { col = "var(--slow)"; state = "Running SLOW"; }
   els.rateValue.style.color = col; els.rateState.style.color = col; els.rateState.textContent = state;
@@ -438,6 +612,18 @@ function updateGuidance(res) {
   const spd = res.secPerDay;
   const be = res.beatErrorMs;
   let head, detail;
+
+  // If the measured rate is nowhere near the target, the s/day figure is
+  // meaningless — steer the user to fix the beat rate instead of the pendulum.
+  if (Math.abs(res.measuredBph - targetBph()) / targetBph() > 0.03) {
+    els.guideHead.textContent = "⚠️ Beat-rate mismatch — this isn't a real rate error.";
+    els.guideDetail.innerHTML = "The measured beat rate (<b>" + res.measuredBph.toFixed(0) +
+      " BPH</b>) is far from your target (<b>" + Math.round(targetBph()) + " BPH</b>), so the " +
+      "“s/day” number above isn't meaningful. Open <b>“What beat rate should I use?”</b> and tap " +
+      "<b>Suggest beat rate</b>, or use <b>Calibrate from observed drift</b>.";
+    els.adjustBox.classList.add("hidden");
+    return;
+  }
 
   if (Math.abs(spd) < 2) {
     head = "✅ In regulation — within a couple of seconds per day.";
